@@ -2,8 +2,8 @@
 #define FILA_H
 #include <stdio.h>
 #include <string.h>
-#include "PDA.h"
 #include <pthread.h>
+#include "PDA.h"
 
 typedef struct {
     mensagem buffer[10]; //buffer para armazenar ate 10 mensagens 
