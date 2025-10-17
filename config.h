@@ -4,7 +4,7 @@
 #include <string.h>
 #include <stdlib.h>
 
-struct {
+typedef struct{
     //para o roteador.config
     int id;
     int porta;
@@ -13,9 +13,23 @@ struct {
     //para o enlaces.config
     int vizinho_id[100];
     int custo[100];
-}config;
+} config_t;
 
-void ler_config(int id_roteador){
+/*
+ * Lê as configurações para o roteador com id 'id_roteador'
+ * Retorna uma estrutura config_t com os valores carregados.
+ */
+config_t ler_config(int id_roteador){
+
+    config_t cfg;
+    // inicializa com valores padrão / sentinela
+    cfg.id = -1;
+    cfg.porta = -1;
+    cfg.ip[0] = '\0';
+    for (int i = 0; i < 100; i++) {
+        cfg.vizinho_id[i] = -1;
+        cfg.custo[i] = 0;
+    }
 
     //leitura do arquivo roteador.config para carregar as configurações do roteador
     FILE *file = fopen("roteador.config", "r");
@@ -30,18 +44,18 @@ void ler_config(int id_roteador){
         char ip[16];
         if (sscanf(line, "%d %d %15s", &id, &porta, ip) == 3) {
             if (id == id_roteador) {
-                config.id = id;
-                config.porta = porta;
-                strncpy(config.ip, ip, sizeof(config.ip) - 1);
-                config.ip[sizeof(config.ip) - 1] = '\0';
+                cfg.id = id;
+                cfg.porta = porta;
+                strncpy(cfg.ip, ip, sizeof(cfg.ip) - 1);
+                cfg.ip[sizeof(cfg.ip) - 1] = '\0';
                 break;
             }
         }
     }
     fclose(file);
-//==============================================================================
+    //==============================================================================
 
-    //leitura do arquivo enlaces.confi para carregar os vizinhos e custos
+    //leitura do arquivo enlaces.config para carregar os vizinhos e custos
     file = fopen("enlaces.config", "r");
     if (file == NULL) {
         perror("Erro ao abrir enlaces.config");
@@ -50,26 +64,31 @@ void ler_config(int id_roteador){
 
     int index = 0;
     while (fgets(line, sizeof(line), file) && index < 100) {
-        int id,id_vizinho, custo;
-        if (sscanf(line, "%d %d %*s",&id, &id_vizinho, &custo) == 2) {
-            //caso o vizinho seja ele mesmo, adiciona de quem ele é vizinho
-            if(id_vizinho == id_roteador){
-                config.vizinho_id[index] = id;
-                config.custo[index] = custo;
+        int id, id_vizinho, custo;
+        // formato esperado: "<id_origem> <id_destino> <custo>"
+        if (sscanf(line, "%d %d %d", &id, &id_vizinho, &custo) == 3) {
+            // caso o vizinho seja ele mesmo, adiciona de quem ele é vizinho
+            if (id_vizinho == id_roteador) {
+                cfg.vizinho_id[index] = id;
+                cfg.custo[index] = custo;
                 index++;
                 continue;
             }
-            //caso o id do roteador na linha seja igual ao id do roteador atual, adiciona o vizinho
-            config.vizinho_id[index] = id_vizinho;
-            config.custo[index] = custo;
-            index++;
+            // caso o id do roteador na linha seja igual ao id do roteador atual, adiciona o vizinho
+            if (id == id_roteador) {
+                cfg.vizinho_id[index] = id_vizinho;
+                cfg.custo[index] = custo;
+                index++;
+            }
         }
     }
-    // Marca o fim dos vizinhos
+    // Marca o fim dos vizinhos (se ainda houver espaço)
     if (index < 100) {
-        config.vizinho_id[index] = -1;
+        cfg.vizinho_id[index] = -1;
     }
     fclose(file);
+
+    return cfg;
 }
 
 #endif
