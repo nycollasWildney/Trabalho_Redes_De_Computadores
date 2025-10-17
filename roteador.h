@@ -8,6 +8,7 @@
 #include <pthread.h>//biblioteca para threads
 #include "PDA.h"
 #include "Fila.h"
+#include "config.h"
 #define MAX_VIZINHOS 10
 
 typedef struct {
@@ -29,15 +30,15 @@ typedef struct {
     // pthread_t thread_processar; // Thread para processar mensagens    
 }roteador;
 
-void roteador_init(roteador *r,int id, int porta, const char *ip,const int *vizinhos, const int *custos) {
+void roteador_init(roteador *r, config_t *config, int id){
     r->id = id;
-    r->porta = porta;
-    strncpy(r->ip, ip, sizeof(r->ip) - 1);
+    r->porta = config->porta;
+    strncpy(r->ip, config->ip, sizeof(r->ip) - 1);
     r->ip[sizeof(r->ip) - 1] = '\0';
     r->num_vizinhos = 0;
-    for (int i = 0; i < MAX_VIZINHOS && vizinhos[i] != -1; i++) {
-        r->vizinhos[i] = vizinhos[i];
-        r->custos[i] = custos[i];
+    for (int i = 0; i < MAX_VIZINHOS && config->vizinho_id[i] != -1; i++) {
+        r->vizinhos[i] = config->vizinho_id[i];
+        r->custos[i] = config->custo[i];
         r->num_vizinhos++;
     }
 }
