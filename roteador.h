@@ -24,10 +24,10 @@ typedef struct {
     Fila fila_entrada; // Fila de entrada de mensagens
     Fila fila_saida; // Fila de saída de mensagens
 
-    //nao vou usar multiplos roteadores por processo, entao nao vou usar threads
-    // pthread_t thread_receber; // Thread para escutar mensagens
-    // pthread_t thread_enviae; // Thread para enviar mensagens
-    // pthread_t thread_processar; // Thread para processar mensagens    
+    //adiciona socket compartilhado do roteador
+    int socket;
+
+    pthread_mutex_t rt_mutex; // Mutex para proteger a tabela de roteamento
 }roteador;
 
 void roteador_init(roteador *r, config_t *config, int id){
@@ -40,6 +40,30 @@ void roteador_init(roteador *r, config_t *config, int id){
         r->vizinhos[i] = config->vizinho_id[i];
         r->custos[i] = config->custo[i];
         r->num_vizinhos++;
+    }
+    pthread_mutex_init(&r->rt_mutex, NULL);
+    fila_init(&r->fila_entrada);
+    fila_init(&r->fila_saida);
+
+    /* 
+    cria um socket UDP único e faz bind na porta do roteador (uma vez) 
+    e nao deixa lento por sempre criar e fechar o socket em enviar e receber
+    */
+    r->socket = socket(AF_INET, SOCK_DGRAM, 0);
+    if (r->socket < 0) {
+        perror("Erro ao criar socket do roteador");
+        r->socket = -1;
+    } else {
+        struct sockaddr_in addr_local;
+        memset(&addr_local, 0, sizeof(addr_local));
+        addr_local.sin_family = AF_INET;
+        addr_local.sin_port = htons(r->porta);
+        addr_local.sin_addr.s_addr = INADDR_ANY;
+        if (bind(r->socket, (struct sockaddr *)&addr_local, sizeof(addr_local)) < 0) {
+            perror("Erro ao dar bind no socket do roteador");
+            close(r->socket);
+            r->socket = -1;
+        }
     }
 }
 
@@ -75,54 +99,24 @@ void enviar(roteador *r, mensagem *m){
         return; 
     }
     //enviar a mensagem
-    ssize_t bytes_enviados = sendto(sock, m, sizeof(mensagem), 0, (struct sockaddr *)&addr_dest, sizeof(addr_dest));
-    if (bytes_enviados < 0) {
-        perror("Erro ao enviar mensagem");
-    } else {
-        printf("Roteador %d: Mensagem enviada para roteador %d\n", r->id, m->IDdestino);
-    }
-    close(sock); //fecha o socket
+    // use r->sock se for válido:
+    int sock_to_use = (r->socket >= 0) ? r->socket : socket(AF_INET, SOCK_DGRAM, 0);
+    sendto(sock_to_use, m, sizeof(mensagem), 0, (struct sockaddr *)&addr_dest, sizeof(addr_dest));
+    if (sock_to_use != r->socket) close(sock_to_use);
 }
 
-mensagem receber(roteador *r){
-    mensagem m;
-    struct sockaddr_in addr_remetente;
-    socklen_t addr_len = sizeof(addr_remetente);
-
-    //cria o socket UDP
-    int sock = socket(AF_INET, SOCK_DGRAM, 0);
-    if (sock < 0) {
-        perror("Erro ao criar socket");
-        // Retorna mensagem "vazia"
-        memset(&m, 0, sizeof(mensagem));
-        return m;
+//recebe a struct de mensagem ja inicializada fora da função
+int receber(roteador *r, mensagem *m) {
+    if (r->socket < 0) return 0;
+    struct sockaddr_in rem;
+    socklen_t len = sizeof(rem);
+    //nao precisa retornar o -m- pois ele entra como ponteiro entao ele sai om os valores
+    ssize_t n = recvfrom(r->socket, m, sizeof(mensagem), 0, (struct sockaddr *)&rem, &len);
+    if(n < 0){
+        perror("erro ao receber a mensagem");
+        return 0;
     }
-
-    //prepara o endereço local
-    struct sockaddr_in addr_local;
-    memset(&addr_local, 0, sizeof(addr_local));
-    addr_local.sin_family = AF_INET;
-    addr_local.sin_port = htons(r->porta);
-    addr_local.sin_addr.s_addr = INADDR_ANY;
-
-    //faz o bind do socket à porta do roteador
-    if (bind(sock, (struct sockaddr *)&addr_local, sizeof(addr_local)) < 0) {
-        perror("Erro ao fazer bind");
-        close(sock);
-        memset(&m, 0, sizeof(mensagem));
-        return m;
-    }
-
-    // Recebe a mensagem (bloqueia até chegar algo)
-    ssize_t bytes_recebidos = recvfrom(sock, &m, sizeof(mensagem), 0,
-                                       (struct sockaddr *)&addr_remetente, &addr_len);
-    if (bytes_recebidos < 0) {
-        perror("Erro ao receber mensagem");
-        memset(&m, 0, sizeof(mensagem));
-    }
-
-    close(sock);
-    return m;
+    return 1;
 }
 
 #endif
