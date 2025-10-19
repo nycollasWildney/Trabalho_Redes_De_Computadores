@@ -2,20 +2,47 @@
 #include "Fila.h"
 #include "PDA.h"
 #include "roteador.h"
+#include "config.h"
 
 #include <unistd.h>//biblioteca para manipulação de arquivos
 #include <arpa/inet.h>//biblioteca para manipulação de endereços IP
 #include <sys/socket.h>//biblioteca para sockets
 #include <pthread.h>//biblioteca para threads
 
-//implementa a função para receber mensagens e colocar na fila de entrada ou saida
-void thread_receber(roteador *r){
-    mensagem m;
-    ssize_t bytes_recebidos;//usando para saber se a mensagem foi recebida ou não
+/*
+    Essas funções são ponteiro para ser usadas na função de criar threads
+    o argumento é ponteiro arg para receber o roteador ou outros argumentos
+*/
+
+void *thread_enviar(void *arg){
+    //tornar o *arg em roteador
+    roteador *r = (roteador *)arg;
     while(1){
-        m = receber(r);
-        bytes_recebidos = sizeof(m);
-        if (bytes_recebidos > 0) {
+        //Caso a fila esteja vazia, aguarda um pouco antes de verificar novamente
+        if(fila_empty(&r->fila_saida)){
+            usleep(100000);
+            continue;
+        }
+        mensagem m = fila_pop(&r->fila_saida);
+        if(m.tipo == CONTROLE){
+            continue;
+            //poor equanto não faz nada
+        }
+        else if(m.tipo == DADO){
+            enviar(r, &m);
+            printf("\033[1;32m Payload: %s\n \033[0m\n",m.payload);//printa payload em VERDE
+            continue;
+        }
+    }
+    return NULL;
+}
+
+void *thread_receber(void *arg){
+    roteador *r = (roteador *)arg;
+    mensagem m;
+    while(1){
+        int receiver = receber(r,&m);
+        if(receiver){
             if(m.IDdestino != r->id){
                 printf("Roteador %d: mensagem não é pra mim enviando para fila de saída\n", r->id);
                 fila_push(&r->fila_saida, m);
@@ -23,8 +50,8 @@ void thread_receber(roteador *r){
             }
             printf("Roteador %d: Mensagem recebida de roteador %d:\n", r->id, m.IDfonte);
             //debug print da mensagem recebida
-            printf("  Tipo: %s\n", (m.tipo == CONTROLE) ? "CONTROLE" : "DADO");
-            printf("  Payload: %s\n", m.payload);
+            printf("\033[1;31m Tipo: %s\n \033[0m\n", (m.tipo == CONTROLE) ? "CONTROLE" : "DADO");
+            printf("\033[1;31m Payload: %s\n \033[0m\n",m.payload);
 
             // Adiciona a mensagem recebida à fila de entrada
             fila_push(&r->fila_entrada, m);
@@ -33,29 +60,44 @@ void thread_receber(roteador *r){
             printf("Roteador %d: Nenhuma mensagem recebida.\n", r->id);
         }
     }
+    return NULL;
 }
 
-//implementa a função para enviar mensagens da fila de saída
-void thread_enviar(roteador *r){
+void *thread_processar(void *arg){
+    roteador *r = (roteador *)arg;
     mensagem m;
     while(1){
-        if (fila_empty(&r->fila_saida)) {
-            // Se a fila de saída estiver vazia espera um pouco para voltar a verificar
+        //sempre manter essa verificação para evitar travar o processo
+        if (fila_empty(&r->fila_entrada)){
             usleep(100000); // Dorme por 100 ms
             continue;
         }
-        m = fila_pop(&r->fila_saida);
-        if(m.tipo == "CONTROLE"){
-            //nada ainda , vai ser usado para bellman-ford futuramente para saber o custo dos vizinhos
-        }
-        if(m.tipo == "DADO"){   
-            enviar(r, &m);
-        }
+
+        m = fila_pop(&r->fila_entrada);
+        //processar a mensagem recebida
+        printf("Roteador %d: Processando mensagem recebida de roteador %d\n", r->id, m.IDfonte);
+        printf("\033[1;34m Payload: %s\n \033[0m\n",m.payload);
     }
+    return NULL;
 }
 
-void thread_processar(roteador *r){}
+void mensagem_controle(roteador *r, mensagem *m){
+    
+}
 
 int main(int argc, char *argv[]){
+    roteador r;
+    config_t cfg;    
+    //verifica se o id do roteador foi passado como argumento
+    if(argc < 2){
+        printf("Uso: %s <id_roteador>\n", argv[0]);
+        return 1;
+    }
+    
+    r.id = atoi(argv[1]);
+    cfg = ler_config(r.id); 
+    roteador_init(&r, &cfg, r.id);
+    printf("Roteador %d iniciado na porta %d com IP %s\n", r.id, r.porta, r.ip);
+
 
 }
