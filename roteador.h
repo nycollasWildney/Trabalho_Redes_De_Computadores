@@ -24,10 +24,22 @@ typedef struct {
     Fila fila_entrada; // Fila de entrada de mensagens
     Fila fila_saida; // Fila de saída de mensagens
 
+    int matriz_custo[10][10]; // matriz dos custos 
+
     //adiciona socket compartilhado do roteador
     int socket;
-
     pthread_mutex_t rt_mutex; // Mutex para proteger a tabela de roteamento
+
+    /*
+      talvez eu use essa parte para caso a matrix mude 
+      e avise as threads que a matrix mudou apos ter
+      recebido todas as alterações das mensagens de controle  
+    */
+    // int mudanca;
+    // pthread_mutex_t mutex_mudanca;
+    // pthread_cond_t cond_mudanca;
+
+
 }roteador;
 
 void roteador_init(roteador *r, config_t *config, int id){
@@ -64,6 +76,11 @@ void roteador_init(roteador *r, config_t *config, int id){
             close(r->socket);
             r->socket = -1;
         }
+    }
+
+    memset(r->matriz_custo, -1, sizeof(r->matriz_custo));
+    for(int i=0;i < r->num_vizinhos;i++){
+        r->matriz_custo[r->id][r->vizinhos[i]] = r->custos[i];
     }
 }
 
