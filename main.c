@@ -15,10 +15,17 @@
     o argumento é ponteiro arg para receber o roteador ou outros argumentos
 */
 
-/*
+    /*
     FALTA COLOCAR UMA FUNCAO PARA CALCULAR QUAL MELHOR CAMINHO ATE UM 
     DESTINO USANDO BELLMAN-FORD E VERIFICAR SE O ARRAY ESTA CERTO
-*/
+
+    CASO NECESSITE COLOCAR UM CONTROLE DE TEMPO, NA FUNCAO DE ENVIAR PERIODICAMENTE
+    MENSAGEM DE CONTROLE, PARA ENVITAR CONCORRENCIA CASO TENHA UMA GRAVE
+    (a solucao seria usar mutex no roteador.h para proteger de corrida)
+
+    FALTA COLOCAR SALVAR OS ARRAYS REEBIDOS DOS ARRAYS MESMO NAO SENDO O
+    DE MENOR TAMANHO
+    */
 
 void *thread_enviar(void *arg){
     //tornar o *arg em roteador
@@ -97,7 +104,7 @@ void *thread_processar(void *arg){
 //usada para periodicamente manda rmensagem de controle
 void *time_controle(void *arg){
     roteador *r = (roteador*) arg;
-
+    
     while(1){
         mensagem m;
         m.tipo = CONTROLE;
@@ -111,7 +118,8 @@ void *time_controle(void *arg){
             printf("\033[1;31m Payload: %s\n \033[0m\n",m.payload);
         }
         //dorme por 10s antes da proxima mensagem de controle
-        sleep(10);
+        int tempo = r->controle_intervalo;
+        sleep(tempo);
     }
 }
 
@@ -125,22 +133,90 @@ void mensagem_controle(roteador *r, mensagem *m){
     if(strcmp(m->payload,"PERGUNTA:") == 0){
         array_from_mensagem(r,m);
         pritnf("\033[1;31m Payload %s\n \033[0m\n",m->payload);
+        fila_push(&r->fila_saida,*m);
         return;
     }
     if(strncmp(m->payload,"RESPOSTA:",9) == 0){
         int caminhos[MAX_VIZINHOS][MAX_VIZINHOS];
         mensagem_from_array(r,m,caminhos);
-        /*
-            aqui colocar um controle de quantas mensagens de controle
-            sairam para controlar se ja recebeu todas as respostas 
-            e apos isso verificar caminhos curtos e atualiza a matriz 
-            e depois avisa as threads que a matriz mudou e manda mensagens de 
-            controle dizendo que mudou
-        */
+        r->msg_controle_recebidas++;
+        if(r->msg_controle_recebidas == r->num_vizinhos){
+            r->msg_controle_recebidas = 0;
+            /*
+                aqui colocar um controle de quantas mensagens de controle
+                sairam para controlar se ja recebeu todas as respostas 
+                e apos isso verificar caminhos curtos e atualiza a matriz 
+                e depois avisa as threads que a matriz mudou e manda mensagens de 
+                controle dizendo que mudou
+            */
+        }
         return;
     }
 }
 
+
+void *thread_terminal(void *arg){
+    char opcao[10];
+    roteador *r = (roteador *)arg;
+    /*
+    1. mostrar tabela de roteamento
+    2. mostrar arrays de vizinhos e custos(+ recentes)
+    3. enviar mensagem
+    4. alterar intervalo de mensagem de controle
+    5. sair
+    */
+    while(1){
+        printf("Opções:\n");
+        printf("1. Mostrar tabela de roteamento\n");
+        printf("2. Mostrar arrays de vizinhos e custos\n");
+        printf("3. Enviar mensagem\n");
+        printf("4. Alterar intervalo de mensagem de controle\n");
+        printf("5. Sair\n");
+        printf("Escolha uma opção: ");
+        fgets(opcao, sizeof(opcao), stdin);
+        int escolha = atoi(opcao);
+        switch(escolha){
+            case 1:
+                //mostrar tabela de roteamento
+                break;
+            case 2:
+                //mostrar arrays de vizinhos e custos
+                break;
+            case 3:
+                //enviar mensagem
+                char msg[101];
+                int destino; //id do destino
+                printf("Digite o ID do roteador destino: ");
+                fgets(opcao, sizeof(opcao), stdin);
+                destino = atoi(opcao);
+                printf("Digite a mensagem: ");
+                fgets(msg, sizeof(msg), stdin);
+                //criar a mensagem
+                mensagem m;
+                m.tipo = DADO;
+                m.IDfonte = r->id;
+                m.IDdestino = destino;
+                strncpy(m.payload, msg, sizeof(m.payload) - 1);
+                m.payload[sizeof(m.payload) - 1] = '\0'; // Garantir
+                fila_push(&r->fila_saida, m);
+                break;
+            case 4:
+                //alterar intervalo de mensagem de controle
+                int novo_intervalo;
+                printf("Digite o novo intervalo em segundos: ");
+                fgets(opcao, sizeof(opcao), stdin);
+                novo_intervalo = atoi(opcao);
+                r->controle_intervalo = novo_intervalo;
+                printf("O intervalo será aplicado após a proxima iteração.\n");
+                break;
+            case 5:
+                printf("Saindo...\n");
+                exit(0);
+            default:
+                printf("Opção inválida. Tente novamente.\n");
+        }
+    }
+}
 int main(int argc, char *argv[]){
     roteador r;
     config_t cfg;    
@@ -154,4 +230,5 @@ int main(int argc, char *argv[]){
     cfg = ler_config(r.id); 
     roteador_init(&r, &cfg, r.id);
     printf("Roteador %d iniciado na porta %d com IP %s\n", r.id, r.porta, r.ip);
+    
 }

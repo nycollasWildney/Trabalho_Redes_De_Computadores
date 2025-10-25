@@ -20,16 +20,16 @@ typedef struct {
     int num_vizinhos; // Número de vizinhos
     int vizinhos[MAX_VIZINHOS]; // IDs dos roteadores vizinhos (máximo de 10)
     int custos[MAX_VIZINHOS]; // Custos para os roteadores vizinhos
-    
     Fila fila_entrada; // Fila de entrada de mensagens
     Fila fila_saida; // Fila de saída de mensagens
-
     int matriz_custo[10][10]; // matriz dos custos 
-
+    
     //adiciona socket compartilhado do roteador
     int socket;
     pthread_mutex_t rt_mutex; // Mutex para proteger a tabela de roteamento
 
+    int msg_controle_recebidas;
+    int controle_intervalo;
     /*
       talvez eu use essa parte para caso a matrix mude 
       e avise as threads que a matrix mudou apos ter
@@ -53,6 +53,8 @@ void roteador_init(roteador *r, config_t *config, int id){
         r->custos[i] = config->custo[i];
         r->num_vizinhos++;
     }
+    r->msg_controle_recebidas=0;    
+    r->controle_intervalo=10; //tempo em segundos do intervalo para mensagem de controle
     pthread_mutex_init(&r->rt_mutex, NULL);
     fila_init(&r->fila_entrada);
     fila_init(&r->fila_saida);
@@ -135,5 +137,7 @@ int receber(roteador *r, mensagem *m) {
     }
     return 1;
 }
+
+
 
 #endif
