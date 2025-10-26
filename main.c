@@ -154,7 +154,7 @@ void mensagem_controle(roteador *r, mensagem *m){
     }
 }
 
-
+//terminal que vai dar a opcao do que pode fazer pelo terminal
 void *thread_terminal(void *arg){
     char opcao[10];
     roteador *r = (roteador *)arg;
@@ -178,9 +178,21 @@ void *thread_terminal(void *arg){
         switch(escolha){
             case 1:
                 //mostrar tabela de roteamento
+                printf("Tabela de roteamento:");
+                for(int i=0;i<10;i++){
+                    printf("Roteador %d: ", i);
+                    for(int j=0;j<10;j++){
+                        if(r->matriz_custo[i][j] == -1){
+                            printf(" - ");
+                        } else {
+                            printf(" %d ", r->matriz_custo[i][j]);
+                        }
+                    }
+                    printf("\n");
+                }
                 break;
             case 2:
-                //mostrar arrays de vizinhos e custos
+                //opcao futura
                 break;
             case 3:
                 //enviar mensagem
@@ -217,6 +229,8 @@ void *thread_terminal(void *arg){
         }
     }
 }
+
+
 int main(int argc, char *argv[]){
     roteador r;
     config_t cfg;    
@@ -231,4 +245,19 @@ int main(int argc, char *argv[]){
     roteador_init(&r, &cfg, r.id);
     printf("Roteador %d iniciado na porta %d com IP %s\n", r.id, r.porta, r.ip);
     
+    //criar as threads 
+    pthread_t tid_enviar, tid_receber, tid_processar, tid_terminal, tid_time_controle;
+    pthread_create(&tid_enviar, NULL, thread_enviar, (void *)&r);
+    pthread_create(&tid_receber, NULL, thread_receber, (void *)&r);
+    pthread_create(&tid_processar, NULL, thread_processar, (void *)&r);
+    pthread_create(&tid_terminal, NULL, thread_terminal, (void *)&r);
+    pthread_create(&tid_time_controle, NULL, time_controle, (void *)&r
+    );
+    //aguardar as threads terminarem (elas nunca terminam nesse caso)
+    pthread_join(tid_enviar, NULL);
+    pthread_join(tid_receber, NULL);
+    pthread_join(tid_processar, NULL);
+    pthread_join(tid_terminal, NULL);
+    pthread_join(tid_time_controle, NULL);
+    return 0;
 }
