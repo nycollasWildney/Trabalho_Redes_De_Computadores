@@ -1,31 +1,17 @@
 #include <stdio.h>
-#include "Fila.h"
 #include "PDA.h"
-#include "roteador.h"
+#include "fila.h"
 #include "config.h"
-
-#include <unistd.h>//biblioteca para manipulação de arquivos
-#include <arpa/inet.h>//biblioteca para manipulação de endereços IP
-#include <sys/socket.h>//biblioteca para sockets
-#include <pthread.h>//biblioteca para threads
+#include "roteador.h"
+#include "mensagem_utils.h"
 #define MAX_VIZINHOS 10
 
 /*
-    Essas funções são ponteiro para ser usadas na função de criar threads
-    o argumento é ponteiro arg para receber o roteador ou outros argumentos
+ERRO TA NA FUNÇAÕ menor_caminho() NELA EU CONSIDERO QUE
+O i VAI PEGAR A POSSIÇÃO CORRETA COMO SE TVESSE NA COORDENADA CERTA 
+MAIS ELES NÃO ESTÃO ORGANIZADOS
 */
 
-    /*
-    FALTA COLOCAR UMA FUNCAO PARA CALCULAR QUAL MELHOR CAMINHO ATE UM 
-    DESTINO USANDO BELLMAN-FORD E VERIFICAR SE O ARRAY ESTA CERTO
-
-    CASO NECESSITE COLOCAR UM CONTROLE DE TEMPO, NA FUNCAO DE ENVIAR PERIODICAMENTE
-    MENSAGEM DE CONTROLE, PARA ENVITAR CONCORRENCIA CASO TENHA UMA GRAVE
-    (a solucao seria usar mutex no roteador.h para proteger de corrida)
-
-    FALTA COLOCAR SALVAR OS ARRAYS REEBIDOS DOS ARRAYS MESMO NAO SENDO O
-    DE MENOR TAMANHO
-    */
 
 void *thread_enviar(void *arg){
     //tornar o *arg em roteador
@@ -42,8 +28,8 @@ void *thread_enviar(void *arg){
         //     //poor equanto não faz nada
         // }
         // else if(m.tipo == DADO){
-            enviar(r, &m);
-            printf("\033[1;31m Payload: %s\n \033[0m\n",m.payload);//printa payload em VERMELHO
+        enviar(r, &m);
+        // printf("\033[1;31m Payload: %s\n \033[0m\n",m.payload);//printa payload em VERMELHO
             // continue;
         // }
     }
@@ -57,20 +43,20 @@ void *thread_receber(void *arg){
         int receiver = receber(r,&m);
         if(receiver){
             if(m.IDdestino != r->id){
-                printf("Roteador %d: mensagem não é pra mim enviando para fila de saída\n", r->id);
+                printf("\033[1;33mRoteador %d: mensagem não é pra mim enviando para fila de saída\n\033[0m", r->id);
                 fila_push(&r->fila_saida, m);
                 continue;
             }
-            printf("Roteador %d: Mensagem recebida de roteador %d:\n", r->id, m.IDfonte);
+            printf("\033[1;32mRoteador %d: Mensagem recebida de roteador %d:\n\033[0m", r->id, m.IDfonte);
             //debug print da mensagem recebida
-            printf("\033[1;31m Tipo: %s\n \033[0m\n", (m.tipo == CONTROLE) ? "CONTROLE" : "DADO");
-            printf("\033[1;31m Payload: %s\n \033[0m\n",m.payload);
+            // printf("\033[1;31m Tipo: %s\n \033[0m\n", (m.tipo == CONTROLE) ? "CONTROLE" : "DADO");
+            printf("\033[1;32mPayload: %s\n \033[0m\n",m.payload);
 
             // Adiciona a mensagem recebida à fila de entrada
             fila_push(&r->fila_entrada, m);
             continue;
         } else {
-            printf("Roteador %d: Nenhuma mensagem recebida.\n", r->id);
+            printf("\033[1;33mRoteador %d: Nenhuma mensagem recebida.\n\033[0m", r->id);
         }
     }
     return NULL;
@@ -93,68 +79,14 @@ void *thread_processar(void *arg){
         }
         if(m.tipo == DADO){
             //processar a mensagem recebida
-            printf("Roteador %d: Processando mensagem recebida de roteador %d\n", r->id, m.IDfonte);
-            printf("\033[1;32m Payload: %s\n \033[0m\n",m.payload);
+            printf("\033[1;32mRoteador %d: Processando mensagem recebida de roteador %d\n\033[0m", r->id, m.IDfonte);
+            printf("\033[1;32mPayload: %s\n\033[0m",m.payload);
             continue;
         }
     }
     return NULL;
 }
 
-//usada para periodicamente manda rmensagem de controle
-void *time_controle(void *arg){
-    roteador *r = (roteador*) arg;
-    
-    while(1){
-        mensagem m;
-        m.tipo = CONTROLE;
-        m.IDfonte = r->id;
-        //colocando no payload de quem é a pergutna e a resposta: mesmo que nao precise 
-        snprintf(m.payload,sizeof(m.payload),"PERGUNTA:");
-
-        for(int i=0;i < r->num_vizinhos; i++){
-            m.IDdestino = r->vizinhos[i];
-            fila_push(&r->fila_saida,m);
-            printf("\033[1;31m Payload: %s\n \033[0m\n",m.payload);
-        }
-        //dorme por 10s antes da proxima mensagem de controle
-        int tempo = r->controle_intervalo;
-        sleep(tempo);
-    }
-}
-
-//usada quando receber a mensagem de controle pede decidir se manda com o array ou manda a solicitação de array
-void mensagem_controle(roteador *r, mensagem *m){
-    if(m->tipo != CONTROLE){
-        printf("\033[1;31m a mensagem recebida não é de controle \n \033[0m\n");
-        return;
-    }
-
-    if(strcmp(m->payload,"PERGUNTA:") == 0){
-        array_from_mensagem(r,m);
-        pritnf("\033[1;31m Payload %s\n \033[0m\n",m->payload);
-        fila_push(&r->fila_saida,*m);
-        return;
-    }
-    if(strncmp(m->payload,"RESPOSTA:",9) == 0){
-        int caminhos[MAX_VIZINHOS][MAX_VIZINHOS];
-        mensagem_from_array(r,m,caminhos);
-        r->msg_controle_recebidas++;
-        if(r->msg_controle_recebidas == r->num_vizinhos){
-            r->msg_controle_recebidas = 0;
-            /*
-                aqui colocar um controle de quantas mensagens de controle
-                sairam para controlar se ja recebeu todas as respostas 
-                e apos isso verificar caminhos curtos e atualiza a matriz 
-                e depois avisa as threads que a matriz mudou e manda mensagens de 
-                controle dizendo que mudou
-            */
-        }
-        return;
-    }
-}
-
-//terminal que vai dar a opcao do que pode fazer pelo terminal
 void *thread_terminal(void *arg){
     char opcao[10];
     roteador *r = (roteador *)arg;
@@ -166,19 +98,21 @@ void *thread_terminal(void *arg){
     5. sair
     */
     while(1){
-        printf("Opções:\n");
+        // printf("\033[1;32mRoteador %d: Processando mensagem recebida de roteador %d\n\033[0m", r->id, m.IDfonte);
+        printf("\033[1;35mOpções:\n");
         printf("1. Mostrar tabela de roteamento\n");
-        printf("2. Mostrar arrays de vizinhos e custos\n");
+        printf("2. Mostrar arrays de vizinhos e custos diretos\n");
         printf("3. Enviar mensagem\n");
         printf("4. Alterar intervalo de mensagem de controle\n");
         printf("5. Sair\n");
-        printf("Escolha uma opção: ");
+        printf("Escolha uma opção: \033[0m");
         fgets(opcao, sizeof(opcao), stdin);
         int escolha = atoi(opcao);
         switch(escolha){
             case 1:
                 //mostrar tabela de roteamento
-                printf("Tabela de roteamento:");
+                printf("Tabela de roteamento:\n");
+                printf("             0  1  2  3  4  5  6  7  8  9\n");
                 for(int i=0;i<10;i++){
                     printf("Roteador %d: ", i);
                     for(int j=0;j<10;j++){
@@ -192,7 +126,11 @@ void *thread_terminal(void *arg){
                 }
                 break;
             case 2:
-                //opcao futura
+                // print dos custos diretos
+                printf("Vizinhos e custos diretos:\n");
+                for(int i=0;i<MAX_VIZINHOS;i++){
+                    printf("Vizinho: %d, Custo: %d\n", r->vizinhos[i], r->custos[i]);
+                }
                 break;
             case 3:
                 //enviar mensagem
@@ -218,8 +156,9 @@ void *thread_terminal(void *arg){
                 printf("Digite o novo intervalo em segundos: ");
                 fgets(opcao, sizeof(opcao), stdin);
                 novo_intervalo = atoi(opcao);
+                printf("Intervalo antigo: %d segundos\n", r->controle_intervalo);
                 r->controle_intervalo = novo_intervalo;
-                printf("O intervalo será aplicado após a proxima iteração.\n");
+                printf("O novo intervalo será aplicado após a proxima iteração.\n");
                 break;
             case 5:
                 printf("Saindo...\n");
@@ -227,6 +166,28 @@ void *thread_terminal(void *arg){
             default:
                 printf("Opção inválida. Tente novamente.\n");
         }
+    }
+}
+
+//AINDA NÃO TESTEI
+void *time_controle(void *arg){
+    roteador *r = (roteador*) arg;
+    
+    while(1){
+        int tempo = r->controle_intervalo;
+        sleep(tempo);
+        mensagem m;
+        m.tipo = CONTROLE;
+        m.IDfonte = r->id;
+        //colocando no payload de quem é a pergutna e a resposta: mesmo que nao precise 
+        snprintf(m.payload,sizeof(m.payload),"PERGUNTA:");
+        
+        for(int i=0;i < MAX_VIZINHOS; i++){
+            m.IDdestino = r->vizinhos[i];
+            fila_push(&r->fila_saida,m);
+            // printf("\033[1;31m Payload: %s\n \033[0m\n",m.payload);
+        }
+        //dorme por 10s antes da proxima mensagem de controle
     }
 }
 
@@ -244,16 +205,14 @@ int main(int argc, char *argv[]){
     cfg = ler_config(r.id); 
     roteador_init(&r, &cfg, r.id);
     printf("Roteador %d iniciado na porta %d com IP %s\n", r.id, r.porta, r.ip);
-    
-    //criar as threads 
-    pthread_t tid_enviar, tid_receber, tid_processar, tid_terminal, tid_time_controle;
+    //criar as threads colocar depois => ...
+    pthread_t tid_enviar, tid_receber, tid_processar, tid_terminal,tid_time_controle;
     pthread_create(&tid_enviar, NULL, thread_enviar, (void *)&r);
     pthread_create(&tid_receber, NULL, thread_receber, (void *)&r);
     pthread_create(&tid_processar, NULL, thread_processar, (void *)&r);
     pthread_create(&tid_terminal, NULL, thread_terminal, (void *)&r);
-    pthread_create(&tid_time_controle, NULL, time_controle, (void *)&r
-    );
-    //aguardar as threads terminarem (elas nunca terminam nesse caso)
+    pthread_create(&tid_time_controle, NULL, time_controle, (void *)&r);
+
     pthread_join(tid_enviar, NULL);
     pthread_join(tid_receber, NULL);
     pthread_join(tid_processar, NULL);
